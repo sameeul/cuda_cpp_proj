@@ -44,6 +44,16 @@ int main(int argc, char *argv[]) {
     std::cout << "Output File: " << output_file << "\n";
     const std::filesystem::path image_path{input_dir};
 
+    int nBufferSize = 0;
+    Npp8u *pDeviceBuffer = nullptr;
+    // pre-allocate these result swapping vars to avoid reallocating at each operation.
+    Npp64f h_sum, h_std_dev, h_mean, *d_var64f_1, *d_var64f_2;
+    Npp16u h_min_val, h_max_val, *d_var16u_1, *d_var16u_2;
+    cudaMalloc(&d_var64f_1, sizeof(Npp64f));
+    cudaMalloc(&d_var64f_2, sizeof(Npp64f));
+    cudaMalloc(&d_var16u_1, sizeof(Npp16u));
+    cudaMalloc(&d_var16u_2, sizeof(Npp16u));
+
     // loop through the image collection
     if (std::filesystem::exists(image_path)) {
       for (auto const &dir_entry :
@@ -72,22 +82,42 @@ int main(int argc, char *argv[]) {
             NppiSize oSizeROI = {(int)oDeviceSrc.width(),
                                  (int)oDeviceSrc.height()};
 
-            int nBufferSize;
-            nppsSumGetBufferSize_64f(tile_size, &nBufferSize);
-            Npp8u *pDeviceBuffer;
-            cudaMalloc((void **)(&pDeviceBuffer), nBufferSize);
-            Npp64f h_sum, *d_sum;
-            cudaMalloc(&d_sum, sizeof(Npp64f));
-
+            // if no decive scratch buffer, allocate device scratch buffer 
+            // this also saves from reallocating at each operation
+            if (!pDeviceBuffer or nBufferSize==0 ){
+              auto tmp = get_scratch_buffer(tile_size);
+              nBufferSize = std::get<0>(tmp);
+              pDeviceBuffer = std::get<1>(tmp);
+            }
+            
             // do work in the device
+
+            //calc sum
             auto stat = nppiSum_16u_C1R(oDeviceSrc.data(), oDeviceSrc.pitch(),
-                                        oSizeROI, pDeviceBuffer, d_sum);
+                                        oSizeROI, pDeviceBuffer, d_var64f_1);
             // get result
-            cudaMemcpy(&h_sum, d_sum, sizeof(Npp64f), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&h_sum, d_var64f_1, sizeof(Npp64f), cudaMemcpyDeviceToHost);
+
+            // calc min, max
+            stat = nppiMinMax_16u_C1R(oDeviceSrc.data(), oDeviceSrc.pitch(), oSizeROI, d_var16u_1, d_var16u_2, pDeviceBuffer);
+            // get result
+            cudaMemcpy(&h_min_val, d_var16u_1, sizeof(Npp16u), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&h_max_val, d_var16u_2, sizeof(Npp16u), cudaMemcpyDeviceToHost);
+            
+            std::cout <<"Sum = "<< h_sum << " Min = "<< h_min_val << " Max = "<< h_max_val <<"\n";
+
+
           }
         }
       }
     }
+
+    if(d_var64f_1) cudaFree(d_var64f_1);
+    if(d_var64f_2) cudaFree(d_var64f_2);
+    if(d_var16u_1) cudaFree(d_var16u_1);
+    if(d_var16u_2) cudaFree(d_var16u_2);
+
+    if(pDeviceBuffer) cudaFree(pDeviceBuffer);
 
   } catch (npp::Exception &rException) {
     std::cerr << "Program error! The following exception occurred: \n";

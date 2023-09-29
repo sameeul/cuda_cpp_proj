@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <npp.h>
+#include <tuple>
 
 #ifndef MAX
 #define MAX(a, b) (a > b ? a : b)
@@ -151,6 +153,18 @@ inline int findCudaDevice(int argc, const char **argv) {
   printf("GPU Device %d: \"%s\" with compute capability %d.%d\n\n", devID,
          deviceProp.name, deviceProp.major, deviceProp.minor);
   return devID;
+}
+
+std::tuple<int, Npp8u *> get_scratch_buffer(size_t tile_size){
+  int max_size = 0, buf_size = 0;
+  nppsMinMaxGetBufferSize_64f(tile_size, &buf_size);
+  max_size = MAX(max_size, buf_size);
+  nppsSumGetBufferSize_64f(tile_size, &buf_size);
+  max_size = MAX(max_size, buf_size);
+  Npp8u *pDeviceBuffer;
+  cudaMalloc((void **)(&pDeviceBuffer), max_size);
+  printf("Allocating CUDA Memory of size %d", max_size);
+  return std::make_tuple(max_size, pDeviceBuffer);
 }
 
 // end of CUDA Helper Functions
