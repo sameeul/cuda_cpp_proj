@@ -62,6 +62,7 @@ Filename,Max,Min,Sum,Mean,StdDev
 ```
 ## Code Organization
 The repository is organized in the following way:
+
 *`src:` code developed for the project 
 *`include/cuda-samples:` necessary header files defining NPP objects. Reused from the `cuda-samples` repository.
 *`include/cuda_lab:` code borrowed from the Lab section of the course that are used for doing common tasks like parsing the arguments and retrieving information about the GPU. 
