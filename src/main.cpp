@@ -3,7 +3,7 @@
 #include <string>
 
 #include "Exceptions.h"
-#include "cuda_helper.h"
+#include "cuda_util.h"
 
 int main(int argc, char *argv[]) {
   try {
@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
       getCmdLineArgumentString(argc, (const char **)argv, "outputFile", &raw_output_file);
       output_file = raw_output_file;
     } else {
-      output_file = input_dir + "_features.csv";
+      output_file = "features.csv";
     }
 
     std::cout << "Output File: " << output_file << "\n";
