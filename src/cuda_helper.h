@@ -1,24 +1,22 @@
-/*
- * Copyright 1993-2012 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
 #ifndef CUDA_HELPER_H
 #define CUDA_HELPER_H
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
+#include <npp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <npp.h>
+
+#include <filesystem>
 #include <tuple>
+
+#include "Exceptions.h"
+#include "ImagesCPU.h"
+#include "ImagesNPP.h"
+#include "grayscale_tiled_tiff.h"
+#include "helper.h"
 
 #ifndef MAX
 #define MAX(a, b) (a > b ? a : b)
@@ -30,8 +28,7 @@ inline int gpuDeviceInit(int devID) {
   auto err = cudaGetDeviceCount(&deviceCount);
 
   if (deviceCount == 0) {
-    fprintf(stderr,
-            "gpuDeviceInit() CUDA error: no devices supporting CUDA.\n");
+    fprintf(stderr, "gpuDeviceInit() CUDA error: no devices supporting CUDA.\n");
     exit(-1);
   }
 
@@ -39,11 +36,8 @@ inline int gpuDeviceInit(int devID) {
 
   if (devID > deviceCount - 1) {
     fprintf(stderr, "\n");
-    fprintf(stderr, ">> %d CUDA capable GPU device(s) detected. <<\n",
-            deviceCount);
-    fprintf(stderr,
-            ">> gpuDeviceInit (-device=%d) is not a valid GPU device. <<\n",
-            devID);
+    fprintf(stderr, ">> %d CUDA capable GPU device(s) detected. <<\n", deviceCount);
+    fprintf(stderr, ">> gpuDeviceInit (-device=%d) is not a valid GPU device. <<\n", devID);
     fprintf(stderr, "\n");
     return -devID;
   }
@@ -70,11 +64,10 @@ inline int _ConvertSMVer2Cores(int major, int minor) {
     int Cores;
   } sSMtoCores;
 
-  sSMtoCores nGpuArchCoresPerSM[] = {
-      {0x30, 192}, {0x32, 192}, {0x35, 192}, {0x37, 192}, {0x50, 128},
-      {0x52, 128}, {0x53, 128}, {0x60, 64},  {0x61, 128}, {0x62, 128},
-      {0x70, 64},  {0x72, 64},  {0x75, 64},  {0x80, 64},  {0x86, 128},
-      {0x87, 128}, {0x89, 128}, {0x90, 128}, {-1, -1}};
+  sSMtoCores nGpuArchCoresPerSM[] = {{0x30, 192}, {0x32, 192}, {0x35, 192}, {0x37, 192}, {0x50, 128},
+                                     {0x52, 128}, {0x53, 128}, {0x60, 64},  {0x61, 128}, {0x62, 128},
+                                     {0x70, 64},  {0x72, 64},  {0x75, 64},  {0x80, 64},  {0x86, 128},
+                                     {0x87, 128}, {0x89, 128}, {0x90, 128}, {-1, -1}};
 
   int index = 0;
 
@@ -119,12 +112,10 @@ inline int gpuGetMaxGflopsDeviceId() {
     if (deviceProp.major == 9999 && deviceProp.minor == 9999) {
       sm_per_multiproc = 1;
     } else {
-      sm_per_multiproc =
-          _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
+      sm_per_multiproc = _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
     }
 
-    int compute_perf = deviceProp.multiProcessorCount * sm_per_multiproc *
-                       deviceProp.clockRate;
+    int compute_perf = deviceProp.multiProcessorCount * sm_per_multiproc * deviceProp.clockRate;
 
     if (compute_perf > max_compute_perf) {
       // If we find GPU with SM major > 2, search only these
@@ -150,23 +141,102 @@ inline int findCudaDevice(int argc, const char **argv) {
   devID = gpuGetMaxGflopsDeviceId();
   auto err = cudaSetDevice(devID);
   err = cudaGetDeviceProperties(&deviceProp, devID);
-  printf("GPU Device %d: \"%s\" with compute capability %d.%d\n\n", devID,
-         deviceProp.name, deviceProp.major, deviceProp.minor);
+  printf("GPU Device %d: \"%s\" with compute capability %d.%d\n\n", devID, deviceProp.name, deviceProp.major,
+         deviceProp.minor);
   return devID;
 }
 
-std::tuple<int, Npp8u *> get_scratch_buffer(size_t tile_size){
+std::tuple<int, Npp8u *> get_scratch_buffer(const NppiSize &roi_size) {
   int max_size = 0, buf_size = 0;
-  nppsMinMaxGetBufferSize_64f(tile_size, &buf_size);
+  nppiSumGetBufferHostSize_16s_C1R(roi_size, &buf_size);
   max_size = MAX(max_size, buf_size);
-  nppsSumGetBufferSize_64f(tile_size, &buf_size);
+  nppiMinMaxGetBufferHostSize_16u_C1R(roi_size, &buf_size);
+  max_size = MAX(max_size, buf_size);
+  nppiMeanStdDevGetBufferHostSize_16u_C1R(roi_size, &buf_size);
   max_size = MAX(max_size, buf_size);
   Npp8u *pDeviceBuffer;
   cudaMalloc((void **)(&pDeviceBuffer), max_size);
-  printf("Allocating CUDA Memory of size %d", max_size);
+
+  printf("Allocating CUDA Memory of size %d bytes\n", max_size);
   return std::make_tuple(max_size, pDeviceBuffer);
 }
 
-// end of CUDA Helper Functions
+void process_dataset(const std::string &input_dir, const std::string &output_file) {
+  const std::filesystem::path image_path{input_dir};
+
+  int nBufferSize = 0;
+  Npp8u *pDeviceBuffer = nullptr;
+  // pre-allocate these result swapping vars to avoid reallocating at each operation.
+  Npp64f h_sum, h_std_dev, h_mean, *d_var64f_1, *d_var64f_2;
+  Npp16u h_min_val, h_max_val, *d_var16u_1, *d_var16u_2;
+  cudaMalloc(&d_var64f_1, sizeof(Npp64f));
+  cudaMalloc(&d_var64f_2, sizeof(Npp64f));
+  cudaMalloc(&d_var16u_1, sizeof(Npp16u));
+  cudaMalloc(&d_var16u_2, sizeof(Npp16u));
+
+  // loop through the image collection
+  if (std::filesystem::exists(image_path)) {
+    for (auto const &dir_entry : std::filesystem::directory_iterator{image_path}) {
+      if (std::filesystem::is_regular_file(dir_entry.path())) {
+        if (dir_entry.path().extension() == ".tif") {
+          std::cout << "Processing " << dir_entry.path().string() << "\n";
+          // read data from tiff image
+          auto image_ptr = std::make_unique<NyxusGrayscaleTiffTileLoader<uint16_t>>(1, dir_entry.path().string());
+          auto tile_size = image_ptr->tileHeight(0) * image_ptr->tileWidth(0);
+          auto data_ptr = std::make_shared<std::vector<uint16_t>>(tile_size);
+          image_ptr->loadTileFromFile(data_ptr, 0, 0, 0, 0);
+
+          // copy to host and then to device
+          npp::ImageCPU_16u_C1 oHostSrc(image_ptr->tileWidth(0), image_ptr->tileHeight(0));
+          memcpy(oHostSrc.data(), data_ptr->data(), tile_size * sizeof(uint16_t));
+          npp::ImageNPP_16u_C1 oDeviceSrc(oHostSrc);
+
+          // prep for sending to device
+          NppiSize oSrcSize = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
+          NppiSize oSizeROI = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
+
+          // if no decive scratch buffer, allocate device scratch buffer
+          // this also saves from reallocating at each operation
+          if (!pDeviceBuffer or nBufferSize == 0) {
+            auto tmp = get_scratch_buffer(oSrcSize);
+            nBufferSize = std::get<0>(tmp);
+            pDeviceBuffer = std::get<1>(tmp);
+          }
+
+          // do work in the device
+
+          // calc sum
+          auto stat = nppiSum_16u_C1R(oDeviceSrc.data(), oDeviceSrc.pitch(), oSizeROI, pDeviceBuffer, d_var64f_1);
+          // get result
+          cudaMemcpy(&h_sum, d_var64f_1, sizeof(Npp64f), cudaMemcpyDeviceToHost);
+
+          // calc min, max
+          stat = nppiMinMax_16u_C1R(oDeviceSrc.data(), oDeviceSrc.pitch(), oSizeROI, d_var16u_1, d_var16u_2,
+                                    pDeviceBuffer);
+          // get result
+          cudaMemcpy(&h_min_val, d_var16u_1, sizeof(Npp16u), cudaMemcpyDeviceToHost);
+          cudaMemcpy(&h_max_val, d_var16u_2, sizeof(Npp16u), cudaMemcpyDeviceToHost);
+
+          // calc mean, std_dev
+          stat = nppiMean_StdDev_16u_C1R(oDeviceSrc.data(), oDeviceSrc.pitch(), oSizeROI, pDeviceBuffer, d_var64f_1,
+                                         d_var64f_2);
+          // get result
+          cudaMemcpy(&h_mean, d_var64f_1, sizeof(Npp64f), cudaMemcpyDeviceToHost);
+          cudaMemcpy(&h_std_dev, d_var64f_2, sizeof(Npp64f), cudaMemcpyDeviceToHost);
+
+          std::cout << "Sum = " << h_sum << " Min = " << h_min_val << " Max = " << h_max_val << " Mean = " << h_mean
+                    << " StdDev = " << h_std_dev << "\n";
+        }
+      }
+    }
+  }
+
+  if (d_var64f_1) cudaFree(d_var64f_1);
+  if (d_var64f_2) cudaFree(d_var64f_2);
+  if (d_var16u_1) cudaFree(d_var16u_1);
+  if (d_var16u_2) cudaFree(d_var16u_2);
+
+  if (pDeviceBuffer) cudaFree(pDeviceBuffer);
+}
 
 #endif
