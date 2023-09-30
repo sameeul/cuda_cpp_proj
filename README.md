@@ -1,7 +1,7 @@
 # CUDA Independent Project
 
 ## Motivation
-Feature extraction of biological images is an important step for building shallow machine learning based image classifiers. In this project, we developed a small proof of concept to show how to use NPP library to calculate some basic image statistical features. We use the [TissueNet](https://datasets.deepcell.org/data) v1.1 image collection's training dataset and process using our `FeatureExtractor` executable.
+Feature extraction of biological images is an important step for building shallow machine learning based image classifiers. In this project, we developed a small proof of concept to show how to use NPP library to calculate some basic image statistical features. We use the [TissueNet](https://datasets.deepcell.org/data) v1.1 image collection's training dataset (5160 images) and process using our `FeatureExtractor` executable.
 
 ## How to Run
 `Feature extractor` takes two command line arguments, `-inputDir` and `-outputFile`. The `inputDir` points to a directory containing `TIF` images that we want to process and `outputFile` sets the name of the CSV file where we want to save the results. A typical command line execution looks like below:
@@ -43,12 +43,12 @@ $ cd  build
 $ cmake  ..
 $ make
 ```
-One sample `TIF` image is provided with in the `data` directory to test the executable. To check the executable, continue with the following.
+One sample `TIF` image is provided with in the `sample_data` directory to test the executable. To check the executable, continue with the following.
 ```sh
-$ ./FeatureExtractor  -inputDir=../data  -outputFile=test.csv
+$ ./FeatureExtractor  -inputDir=../sample_data  -outputFile=test.csv
 GPU Device  0:  "Tesla T4"  with  compute  capability  7.5
 Starting Feature  Extractor...
-Input Directory:  ../data
+Input Directory:  ../sample_data
 Output File:  test.csv
 Started processing  the  directory.
 .
@@ -66,7 +66,7 @@ The repository is organized in the following way:
 * `src:` code developed for the project 
 * `include/cuda-samples:` necessary header files defining NPP objects. Reused from the `cuda-samples` repository.
 * `include/cuda_lab:` code borrowed from the Lab section of the course that are used for doing common tasks like parsing the arguments and retrieving information about the GPU. 
-* `data:` contains one sample `TIF` image to test the executable. 
+* `sample_data:` contains one sample `TIF` image to test the executable. 
 * `output:` contains the `stdout` of one sample run and one sample output file containing the features calculated for the training dataset of the TissueNet v1.1 data.
  
 ## License
