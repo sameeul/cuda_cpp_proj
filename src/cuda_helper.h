@@ -1,3 +1,13 @@
+/*
+ * Copyright 1993-2012 NVIDIA Corporation.  All rights reserved.
+ *
+ * Please refer to the NVIDIA end user license agreement (EULA) associated
+ * with this source code for terms and conditions that govern your use of
+ * this software. Any use, reproduction, disclosure, or distribution of
+ * this software and related documentation outside the terms of the EULA
+ * is strictly prohibited.
+ *
+ */
 #ifndef CUDA_HELPER_H
 #define CUDA_HELPER_H
 
@@ -9,7 +19,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <tuple>
 
 #include "Exceptions.h"
@@ -174,14 +186,29 @@ void process_dataset(const std::string &input_dir, const std::string &output_fil
   cudaMalloc(&d_var16u_1, sizeof(Npp16u));
   cudaMalloc(&d_var16u_2, sizeof(Npp16u));
 
+  std::ofstream output_csv;
+  output_csv.open(output_file);
+
+  // populate header
+
+  output_csv << "Filename,Max,Min,Sum,Mean,StdDev\n";
+  std::cout << "Started processing the directory.\n";
   // loop through the image collection
+  int count = 0;
+  const auto start{std::chrono::steady_clock::now()};
   if (std::filesystem::exists(image_path)) {
     for (auto const &dir_entry : std::filesystem::directory_iterator{image_path}) {
       if (std::filesystem::is_regular_file(dir_entry.path())) {
         if (dir_entry.path().extension() == ".tif") {
-          std::cout << "Processing " << dir_entry.path().string() << "\n";
+          auto file_name = dir_entry.path().string();
+
+          // progress indicator
+          if (count % 10 == 0) std::cout << ".";
+          if (count % 1000 == 0) std::cout << "\n";
+          count++;
+
           // read data from tiff image
-          auto image_ptr = std::make_unique<NyxusGrayscaleTiffTileLoader<uint16_t>>(1, dir_entry.path().string());
+          auto image_ptr = std::make_unique<NyxusGrayscaleTiffTileLoader<uint16_t>>(1, file_name);
           auto tile_size = image_ptr->tileHeight(0) * image_ptr->tileWidth(0);
           auto data_ptr = std::make_shared<std::vector<uint16_t>>(tile_size);
           image_ptr->loadTileFromFile(data_ptr, 0, 0, 0, 0);
@@ -224,12 +251,17 @@ void process_dataset(const std::string &input_dir, const std::string &output_fil
           cudaMemcpy(&h_mean, d_var64f_1, sizeof(Npp64f), cudaMemcpyDeviceToHost);
           cudaMemcpy(&h_std_dev, d_var64f_2, sizeof(Npp64f), cudaMemcpyDeviceToHost);
 
-          std::cout << "Sum = " << h_sum << " Min = " << h_min_val << " Max = " << h_max_val << " Mean = " << h_mean
-                    << " StdDev = " << h_std_dev << "\n";
+          output_csv << dir_entry.path().filename() << "," << h_min_val << "," << h_max_val << "," << h_sum << ","
+                     << h_mean << "," << h_std_dev << "\n";
         }
       }
     }
   }
+
+  const auto end{std::chrono::steady_clock::now()};
+  const std::chrono::duration<double> elapsed_seconds{end - start};
+  std::cout << "\nFinished processing the directory.\nElapsed Time: " << elapsed_seconds.count() << " seconds\n";
+  output_csv.close();
 
   if (d_var64f_1) cudaFree(d_var64f_1);
   if (d_var64f_2) cudaFree(d_var64f_2);
