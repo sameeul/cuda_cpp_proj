@@ -3,12 +3,15 @@
 #include <string>
 
 #include "Exceptions.h"
+#include "cuda_funcs.h"
 #include "cuda_util.h"
+#include "helper.h"
 
 int main(int argc, char *argv[]) {
   try {
     findCudaDevice(argc, (const char **)argv);
-    std::cout << "Starting..." << argv[0] << "\n";
+    std::cout << "Starting Feature Extractor..."
+              << "\n";
 
     char *raw_input_dir;
     if (checkCmdLineFlag(argc, (const char **)argv, "inputDir")) {

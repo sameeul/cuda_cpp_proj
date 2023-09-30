@@ -27,8 +27,7 @@ inline int stringRemoveDelimiter(char delimiter, const char *string) {
   return string_start;
 }
 
-inline bool checkCmdLineFlag(const int argc, const char **argv,
-                             const char *string_ref) {
+inline bool checkCmdLineFlag(const int argc, const char **argv, const char *string_ref) {
   bool bFound = false;
 
   if (argc >= 1) {
@@ -37,13 +36,11 @@ inline bool checkCmdLineFlag(const int argc, const char **argv,
       const char *string_argv = &argv[i][string_start];
 
       const char *equal_pos = strchr(string_argv, '=');
-      int argv_length = static_cast<int>(
-          equal_pos == 0 ? strlen(string_argv) : equal_pos - string_argv);
+      int argv_length = static_cast<int>(equal_pos == 0 ? strlen(string_argv) : equal_pos - string_argv);
 
       int length = static_cast<int>(strlen(string_ref));
 
-      if (length == argv_length &&
-          !STRNCASECMP(string_argv, string_ref, length)) {
+      if (length == argv_length && !STRNCASECMP(string_argv, string_ref, length)) {
         bFound = true;
         continue;
       }
@@ -53,9 +50,7 @@ inline bool checkCmdLineFlag(const int argc, const char **argv,
   return bFound;
 }
 
-inline bool getCmdLineArgumentString(const int argc, const char **argv,
-                                     const char *string_ref,
-                                     char **string_retval) {
+inline bool getCmdLineArgumentString(const int argc, const char **argv, const char *string_ref, char **string_retval) {
   bool bFound = false;
 
   if (argc >= 1) {
