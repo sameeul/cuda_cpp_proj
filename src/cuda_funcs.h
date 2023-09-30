@@ -1,14 +1,15 @@
+#include <npp.h>
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <tuple>
-#include <npp.h>
 
 #include "Exceptions.h"
 #include "ImagesCPU.h"
 #include "ImagesNPP.h"
-#include "grayscale_tiled_tiff.h"
 #include "cuda_util.h"
+#include "grayscale_tiled_tiff.h"
 
 std::tuple<int, Npp8u *> get_scratch_buffer(const NppiSize &roi_size) {
   int max_size = 0, buf_size = 0;
@@ -43,8 +44,8 @@ void process_dataset(const std::string &input_dir, const std::string &output_fil
 
   // populate header
 
-  output_csv<<"Filename,Max,Min,Sum,Mean,StdDev\n";
-  std::cout <<"Started processing the directory.\n";
+  output_csv << "Filename,Max,Min,Sum,Mean,StdDev\n";
+  std::cout << "Started processing the directory.\n";
   // loop through the image collection
   int count = 0;
   const auto start{std::chrono::steady_clock::now()};
@@ -55,8 +56,8 @@ void process_dataset(const std::string &input_dir, const std::string &output_fil
           auto file_name = dir_entry.path().string();
 
           // progress indicator
-          if (count%10 == 0) std::cout<<".";
-          if (count%1000 == 0) std::cout<<"\n";
+          if (count % 10 == 0) std::cout << ".";
+          if (count % 1000 == 0) std::cout << "\n";
           count++;
 
           // read data from tiff image
@@ -103,7 +104,8 @@ void process_dataset(const std::string &input_dir, const std::string &output_fil
           cudaMemcpy(&h_mean, d_var64f_1, sizeof(Npp64f), cudaMemcpyDeviceToHost);
           cudaMemcpy(&h_std_dev, d_var64f_2, sizeof(Npp64f), cudaMemcpyDeviceToHost);
 
-          output_csv<<dir_entry.path().filename()<<","<<h_min_val<<","<<h_max_val<<","<<h_sum<<","<<h_mean<<","<<h_std_dev<<"\n";
+          output_csv << dir_entry.path().filename() << "," << h_min_val << "," << h_max_val << "," << h_sum << ","
+                     << h_mean << "," << h_std_dev << "\n";
         }
       }
     }
@@ -111,7 +113,8 @@ void process_dataset(const std::string &input_dir, const std::string &output_fil
 
   const auto end{std::chrono::steady_clock::now()};
   const std::chrono::duration<double> elapsed_seconds{end - start};
-  std::cout <<"\nFinished processing the directory ("<< count<<" images).\nElapsed Time: "<<elapsed_seconds.count()<<" seconds\n";
+  std::cout << "\nFinished processing the directory (" << count
+            << " images).\nElapsed Time: " << elapsed_seconds.count() << " seconds\n";
   output_csv.close();
 
   if (d_var64f_1) cudaFree(d_var64f_1);
