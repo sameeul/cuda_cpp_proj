@@ -1,7 +1,7 @@
 # CUDA Independent Project
 
 ## Motivation
-Feature extraction of biological images is an important step for building shallow machine learning based image classifiers. In this project, we developed a small proof of concept to show how to use NPP library to calculate some basic image statistical features. We use the [TissueNet](https://datasets.deepcell.org/data) v1.1 image collection's training dataset (5160 images) and process using our `FeatureExtractor` executable.
+Feature extraction of biological images is an important step for building shallow machine learning based image classifiers. In this project, we developed a small proof of concept to show how to use NPP library to calculate some basic image statistical features. We use the [TissueNet](https://datasets.deepcell.org/data) v1.1 image collection's training dataset (5160 images) and process using our `FeatureExtractor` executable. Due to licensing reason, only one sample data from TissueNet was uploaded to this repository for testing purpose. The csv file in the `output` directory contains the list of all the files that were processed to calculate various features.
 
 ## How to Run
 `Feature extractor` takes two command line arguments, `-inputDir` and `-outputFile`. The `inputDir` points to a directory containing `TIF` images that we want to process and `outputFile` sets the name of the CSV file where we want to save the results. A typical command line execution looks like below:
